@@ -1,0 +1,61 @@
+---
+title: "Vignette Title"
+author: "Vignette Author"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Vignette Title}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+
+```{r, message=FALSE, include=FALSE}
+library(cancensus)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(cancensusHelpers)
+
+```
+
+
+```{r}
+year=2016
+dataset='CA16'
+name='Penticton'
+level="CSD"
+
+region <- list_census_regions(dataset) %>% filter(level==!!level,name==!!name) %>% as_census_region_list
+plot_data <- get_age_data(dataset,region)
+
+ggplot(plot_data, aes(x = Age, y = Population, fill = Gender)) + 
+  geom_bar(stat = "identity") +
+  scale_x_discrete(breaks=c(seq(0, 100, 5),"100+")) +
+  scale_y_continuous(labels = scales::comma) +
+  coord_flip() + 
+  scale_fill_brewer(palette = "Set1") + 
+  theme_bw() +
+  labs(y="Population", title=paste0(name," (",level,"), ",year),caption="cancensus, StatCan 2016 census")
+
+```
+
+```{r}
+age_pyramid_styling <- list(
+  scale_x_discrete(breaks=c(seq(0, 100, 5),"100+")),
+  scale_y_continuous(labels = scales::comma),
+  coord_flip(),
+  scale_fill_brewer(palette = "Set1"),
+  theme_bw(),
+  labs(caption="cancensus, StatCan 2016 census"))
+
+regions <- list_census_regions('CA16') %>% filter(CMA_UID=="59933",level=="CSD") %>% top_n(2,pop)
+plot_data <- get_age_data('CA16',regions %>% as_census_region_list)
+
+ggplot(plot_data %>% rename(City=`Region Name`), aes(x = Age, y = Population, fill = Gender)) + 
+  geom_bar(stat = "identity") +
+  facet_wrap("City",nrow=1) +
+  age_pyramid_styling
+
+```
+
