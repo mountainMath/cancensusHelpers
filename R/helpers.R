@@ -3,7 +3,7 @@
 #' @param dataset Cancensus Datatset
 #' @param regions Cancensus Regions
 #' @export
-get_age_data <- function(dataset,regions,sum=FALSE) {
+get_age_data <- function(dataset,regions,should_sum=FALSE) {
   long_labels <- function(data){
     labels=cancensus::label_vectors(data)
     name_change=setNames(as.character(lapply(labels$Vector,function(x){return(labels %>% dplyr::filter(Vector==x) %>% dplyr::pull("Detail"))})),
@@ -35,8 +35,9 @@ get_age_data <- function(dataset,regions,sum=FALSE) {
                   long_labels %>%
                   dplyr::mutate(Gender="Female")) %>%
     dplyr::mutate(`100+`=`100 years and over`) %>% dplyr::select(c("Region Name","Gender",labels))
-  if (sum) {
-    data <- data %>% dplyr::select(-`Region Name`) %>% dplyr::group_by(Gender) %>% summarize_all(sum)
+  if (should_sum) {
+    selects <- setdiff(names(data),"Region Name")
+    data <- data %>% dplyr::select(selects) %>% dplyr::group_by(Gender) %>% dplyr::summarize_all(sum,na.rm=TRUE)
   }
   plot_data <- data %>% tidyr::gather(key="Age", value="Population",labels) %>%
     dplyr::mutate(Age=factor(Age,levels=label_levels,ordered=TRUE))
@@ -115,6 +116,188 @@ map_theme <- list(
   ggplot2::theme_void(),
   ggplot2::theme(panel.grid.major = ggplot2::element_line(colour = "transparent"))
 )
+
+#' Get variables for CTs making up Old Toronto
+#' @export
+get_old_toronto_data<-function(dataset,vectors=c(),labels="short",geo_format=NA,also_new_toronto=FALSE,aggregate=FALSE){
+  old_toronto_cts <- list(CT=c("5350002.00","5350001.00","5350008.02","5350011.00","5350012.03","5350012.01","5350013.02","5350012.04","5350014.00","5350016.00","5350013.01","5350015.00","5350017.00","5350029.00","5350068.00","5350034.01","5350037.00","5350041.00","5350040.00","5350039.00","5350010.02","5350035.00","5350036.00","5350038.00","5350032.00","5350034.02","5350033.00","5350030.00","5350019.00","5350018.00","5350031.00","5350069.00","5350028.02","5350028.01","5350027.00","5350020.00","5350026.00","5350021.00","5350022.00","5350023.00","5350078.00","5350024.00","5350079.00","5350080.02","5350080.01","5350076.00","5350082.00","5350075.00","5350077.00","5350074.00","5350081.00","5350007.01","5350004.00","5350047.04","5350047.02","5350005.00","5350007.02","5350008.01","5350009.00","5350010.01","5350044.00","5350043.00","5350048.00","5350049.00","5350050.03","5350050.01","5350050.04","5350104.00","5350103.00","5350152.00","5350105.00","5350101.00","5350106.00","5350107.00","5350111.00","5350112.00","5350113.00","5350114.00","5350116.00","5350118.00","5350119.00","5350131.00","5350167.01","5350130.00","5350132.00","5350133.00","5350277.00","5350141.01","5350141.02","5350142.00","5350138.00","5350139.01","5350140.00","5350139.02","5350137.00","5350127.00","5350126.00","5350125.00","5350086.00","5350067.00","5350136.01","5350135.00","5350134.00","5350136.02","5350128.02","5350129.00","5350122.00","5350128.05","5350128.04","5350121.00","5350124.00","5350110.00","5350108.00","5350100.00","5350102.05","5350102.04","5350102.02","5350102.03","5350099.00","5350098.00","5350051.00","5350052.00","5350053.00","5350046.00","5350047.03","5350042.00","5350045.00","5350054.00","5350096.02","5350097.04","5350096.01","5350109.00","5350097.01","5350097.03","5350056.00","5350055.00","5350065.02","5350064.00","5350063.05","5350061.00","5350060.00","5350057.00","5350058.00","5350059.00","5350063.06","5350066.00","5350063.04","5350063.03","5350062.02","5350062.01","5350087.00","5350088.00","5350089.00","5350091.01","5350092.00","5350093.00","5350094.00","5350095.00","5350115.00","5350091.02","5350090.00","5350120.00","5350117.00","5350128.06","5350025.00","5350065.01","5350123.00","5350006.00","5350003.00"))
+  short_cts <- sub("\\.\\d{2}$","",old_toronto_cts$CT) %>% unique
+
+  old_toronto <- get_census("CA16",regions=list(CSD="3520005"),vectors=vectors,level="CT",labels=labels,geo_format=geo_format) %>%
+    mutate(short_ct=sub("\\.\\d{2}$","",GeoUID)) %>%
+    mutate(old=short_ct %in% short_cts & GeoUID != "5350167.02") %>%
+    select(-short_ct)
+
+  if (aggregate){
+    summary_vars=c("Area (sq km)","Population", "Dwellings", "Households")
+    if(length(vectors)>0) {
+      variable_names=names(old_toronto)[grepl(paste(vectors,collapse="|"),names(old_toronto))]
+      summary_vars=c(summary_vars,variable_names)
+    } else {
+      old_toronto <- old_toronto %>% rename(`Area (sq km)`=`Shape Area`)
+    }
+    old_toronto <- old_toronto %>%
+      group_by(old) %>%
+      summarize_at(summary_vars,sum,na.rm=TRUE) %>%
+      mutate(`Region Name`="Old Toronto",
+             type="",
+             GeoUID="xxx")
+  }
+
+  if (!also_new_toronto){
+    old_toronto <- old_toronto %>%
+      filter(old==TRUE) %>%
+      select(-old)
+  }
+  old_toronto
+}
+
+#' Add lat long coordiantes from geometry
+#' @export
+sfc_as_cols <- function(x, names = c("x","y")) {
+  stopifnot(inherits(x,"sf") && inherits(sf::st_geometry(x),"sfc_POINT"))
+  ret <- sf::st_coordinates(x)
+  ret <- tibble::as_tibble(ret)
+  stopifnot(length(names) == ncol(ret))
+  x <- x[ , !names(x) %in% names]
+  ret <- setNames(ret,names)
+  dplyr::bind_cols(x,ret)
+}
+
+#' Download csv xtab data from url, tag with code for caching
+#' @export
+xtab_for <- function(code,url=NA){
+if (is.na(url)) {
+  number=109619+as.integer(substr(code,nchar(code)-2,nchar(code)))
+  year=as.integer(substr(code,nchar(code)-6,nchar(code)-3))
+  url = paste0("http://www12.statcan.gc.ca/census-recensement/",year,"/dp-pd/dt-td/CompDataDownload.cfm?LANG=E&PID=",number,"&OFT=CSV")
+}
+path=file.path(sub("/$","",getOption('custom_data_path')),paste0(code,"_ENG_CSV"),paste0(code,"_English_CSV_data.csv"))
+if (!file.exists(path)) {
+  base_path=dirname(path)
+  temp <- tempfile()
+  download.file(url,temp)
+  utils::unzip(temp,exdir = base_path)
+  unlink(temp)
+}
+read_csv(path) %>%
+  rename(GeoUID = `GEO_CODE (POR)`)
+}
+
+#' Download xml xtab data from url, tag with code for caching
+#' useful for older (2006) data that does not come as csv option
+#' @export
+xml_xtab_for <- function(code,url,refresh=FALSE){
+  data <- NA
+  path <- file.path(getOption("custom_data_path"),paste0(code,".rda"))
+  if (!file.exists(path) | refresh) {
+    temp <- tempfile()
+    exdir <- tempdir()
+    download.file(url,temp)
+    utils::unzip(temp,exdir=exdir)
+    unlink(temp)
+    # read xml xtab for 2006 data.
+    library(xml2)
+    message("Parsing XML")
+    xml_structure <- read_xml(file.path(exdir,paste0("Structure_",code,".xml")))
+    xml_data <- read_xml(file.path(exdir,paste0("Generic_",code,".xml")))
+    unlink(exdir)
+
+    str_concepts <- xml_structure %>% xml_find_all("//structure:ConceptScheme")
+    var_concepts <- str_concepts %>%
+      xml_find_all("structure:Concept") %>%
+      xml_attr("id") %>% setdiff(c("TIME", "GEO", "OBS_VALUE", "OBS_STATUS" ))
+    concepts <- c("GEO",var_concepts)
+
+    concept_names <- lapply(concepts,function(c){
+      xml_structure %>% xml_find_all(paste0("//structure:ConceptScheme/structure:Concept[@id='",c,"']/structure:Name[@xml:lang='en']")) %>%
+        xml_text}) %>% unlist
+
+    concept_lookup <- set_names(concept_names,concepts)
+
+    descriptions_for_code <- function(c){
+      base <- xml_structure %>% xml_find_all(paste0("//structure:CodeList[@id='CL_",toupper(c),"']/structure:Code"))
+      set_names(
+        base %>% map(function(e){e %>% xml_find_all(".//structure:Description[@xml:lang='en']") %>% xml_text}) %>% unlist %>% trimws(),
+        base %>% map(function(e){xml_attr(e,"value")}) %>% unlist
+      )
+    }
+
+    series <- xml_find_all(xml_data,"//generic:Series")
+
+    #series <- series[1:10]
+
+    #l <- lapply(concepts,function(c){series %>% xml_find_all(paste0(".//generic:Value[@concept='",c,"']")) %>% xml_attr("value")})
+
+    time_data <- function(series){
+      message("Extracting year data")
+      series %>% xml_find_all(".//generic:Time") %>% xml_text
+    }
+    value_data <- function(series){
+      message("Extracting values data")
+      series %>% xml_find_all(".//generic:ObsValue") %>% xml_attr("value")
+    }
+    code_data <- function(series,c){
+      message(paste0("Extracting data for ",concept_lookup[c]))
+      series %>% xml_find_all(paste0(".//generic:Value[@concept='",c,"']")) %>% xml_attr("value")
+    }
+
+
+    df=concepts %>%
+      map(function(c){code_data(series,c)}) %>%
+      set_names(concept_names) %>%
+      as.tibble() %>%
+      bind_cols(tibble(Year = time_data(series), Value = value_data(series)))
+
+    for (i in seq(2,length(concepts),1)) {
+      c=concepts[i]
+      n=concept_names[i] %>% as.name
+      lookup <- descriptions_for_code(c)
+      df <- df %>% mutate(!!n := lookup[!!n])
+    }
+
+    fix_ct_geo_format <- function(geo){
+      ifelse(nchar(geo)==9,paste0(substr(geo,1,7),".",substr(geo,8,9)),geo)
+    }
+
+    data <- df  %>%
+      rename(GeoUID=Geography) %>%
+      mutate(GeoUID = fix_ct_geo_format(GeoUID),
+             Value=as.numeric(Value))
+
+    saveRDS(data,path)
+  } else {
+    data <- readRDS(path)
+  }
+  data
+}
+
+#' Simple key-value cache function accepting closures
+#' @param object closure with return expression to be cached
+#' @param key cache key
+#' @param path path to cache the data
+#' @param refresh bool option to force refresh of cache, default FALSE
+#' @export
+simpleCache <- function(object,key,path=getOption("custom_data_path"),refresh=FALSE){
+  cache_path=file.path(path,key)
+  if(!refresh & file.exists(cache_path)) {
+    readRDS(cache_path)
+  } else {
+    data=object
+    saveRDS(data,file=cache_path)
+    data
+  }
+}
+
+#' Get vector tile data, expects option variable nextzen_API_key to be set
+#' @param bbox bounding box for which to get vector tile data
+#' @export
+get_vector_tiles <- function(bbox){
+  rmapzen::mz_set_tile_host_nextzen(getOption("nextzen_API_key"))
+  mx_box=rmapzen::mz_rect(bbox$xmin,bbox$ymin,bbox$xmax,bbox$ymax)
+  rmapzen::mz_vector_tiles(mx_box)
+}
+
 
 #' @importFrom dplyr %>%
 #' @importFrom rlang .data

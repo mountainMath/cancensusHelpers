@@ -4,7 +4,7 @@
 \alias{get_age_data}
 \title{Returns dataset with age data for the specified region}
 \usage{
-get_age_data(dataset, regions, sum = FALSE)
+get_age_data(dataset, regions, should_sum = FALSE)
 }
 \arguments{
 \item{dataset}{Cancensus Datatset}
