@@ -298,6 +298,22 @@ get_vector_tiles <- function(bbox){
   rmapzen::mz_vector_tiles(mx_box)
 }
 
+#' Clean up names in CSDs within CMAs. 
+#' Function takes in a standard cancensus data frame with CSD level data
+#' that contains a `Region Name` variable and drops the 
+#' community type indicator to have cleaner names.
+#' The only duplicated name CSD among CMA CSDs is North Vancouver, and this
+#' function keeps detail for North Vancouver. 
+#' @param a data frame with a `Region Name` variable
+#' @export
+clean_csd_names <- function(df) {
+  df <- df %>% 
+    mutate(`Region Name` = ifelse(`Region Name` == "North Vancouver (DM)",
+                                  "North Vancouver, District",
+                                  gsub(" \\(.*\\)","",`Region Name`)))
+  return(df)
+}
+
 
 #' @importFrom dplyr %>%
 #' @importFrom rlang .data
