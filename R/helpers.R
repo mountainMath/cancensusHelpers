@@ -272,6 +272,19 @@ xml_xtab_for <- function(code,url,refresh=FALSE){
   data
 }
 
+#' @export
+gather_for_grep_string <- function(data,gather_key,grep_string){
+  vars <- names(data)[grepl(grep_string,names(data))]
+  short_vars <- gsub(grep_string,"",vars)
+  names(data) <- gsub(grep_string,"",names(data))
+  data %>% gather(key=!!gather_key,value="Value",short_vars)
+}
+
+#' @export
+strip_columns_for_grep_string <- function(data,grep_string){
+  data %>% select(names(data)[!grepl(grep_string,names(data))])
+}
+
 #' Simple key-value cache function accepting closures
 #' @param object closure with return expression to be cached
 #' @param key cache key
@@ -297,6 +310,55 @@ get_vector_tiles <- function(bbox){
   mx_box=rmapzen::mz_rect(bbox$xmin,bbox$ymin,bbox$xmax,bbox$ymax)
   rmapzen::mz_vector_tiles(mx_box)
 }
+
+
+
+#' load and parse census data for a given year
+#' @export
+get_cov_census_data <- function(year,use_cache=TRUE){
+  base_name="CensusLocalAreaProfiles"
+  year_name=paste0(base_name,year,".csv")
+  path=paste0(getOption("custom_data_path"),year_name)
+  if (!use_cache | !file.exists(path)) {
+    base_data_url="ftp://webftp.vancouver.ca/opendata/csv/"
+    destfile=tempfile()
+    download.file(paste0(base_data_url,year_name),destfile=destfile)
+    data <- read_csv(destfile,skip=4,locale=locale(encoding = "windows-1252"),na=c(NA,"..","F")) %>%
+      mutate(IDX = 1:n())
+    if (!("ID" %in% names(data))) {
+      data <- data %>% mutate(ID=IDX)
+    }
+    if (!("Variable" %in% names(data))) {
+      data <- data %>% rename(Variable=X1)
+    }
+    n<- names(data)[!grepl("^X",names(data))]
+    data <- data %>%
+      select(n) %>%
+      mutate(Variable=ifelse(is.na(ID),paste0("filler_",IDX),paste0("v_",year,"_",ID,": ",Variable))) %>%
+      select(-IDX,-ID)
+    unlink(destfile)
+    dd <- data %>% as.data.frame()
+    row.names(dd)=dd$Variable
+    d <- t(dd %>% select(-Variable))
+    region_names <- rownames(d)
+    transposed_data <- as.tibble(d) %>%
+      dplyr::mutate_all(dplyr::funs(parse_number)) %>%
+      mutate(NAME=case_when(
+        grepl("CSD",region_names) ~ "City of Vancouver",
+        grepl("CMA",region_names) ~ "Metro Vancouver",
+        TRUE ~ region_names), Year=year)
+    write_csv(transposed_data,path=path)
+  }
+  data <- read_csv(path)
+  # %>% inner_join(get_neighbourhood_geos(),by="NAME")
+}
+
+#' Convenience function to serach for census variable
+#' @export
+find_cov_variables <- function(data,search_string){
+  names(data)[grepl(search_string,names(data),ignore.case = TRUE)]
+}
+
 
 
 #' @importFrom dplyr %>%
