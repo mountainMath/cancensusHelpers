@@ -311,7 +311,19 @@ get_vector_tiles <- function(bbox){
   rmapzen::mz_vector_tiles(mx_box)
 }
 
-
+#' Remove municipal status indicators from non-duplicated region names. Indicators are retained for
+#' regions that would otherwise have duplicated names.
+#' @param dfr a cancensus data frame with region names
+#' @export
+clean_names <- function(dfr) {
+  dfr <- dfr %>% mutate(`Region Name` = as.character(`Region Name`))
+  replacement <- dfr %>% mutate(`Region Name` = gsub(" \\(.*\\)","", `Region Name`)) %>% pull(`Region Name`)
+  duplicated_rows <- c(which(duplicated(replacement, fromLast = TRUE)),
+                       which(duplicated(replacement, fromLast = FALSE)))
+  replacement[duplicated_rows] <- dfr$`Region Name`[duplicated_rows]
+  dfr$`Region Name` <- factor(replacement)
+  dfr
+}
 
 #' load and parse census data for a given year
 #' @export
