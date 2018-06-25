@@ -166,14 +166,14 @@ sfc_as_cols <- function(x, names = c("x","y")) {
 
 #' Download csv xtab data from url, tag with code for caching
 #' @export
-xtab_for <- function(code,url=NA){
+xtab_for <- function(code,url=NA,refresh=FALSE){
 if (is.na(url)) {
   number=109619+as.integer(substr(code,nchar(code)-2,nchar(code)))
   year=as.integer(substr(code,nchar(code)-6,nchar(code)-3))
   url = paste0("http://www12.statcan.gc.ca/census-recensement/",year,"/dp-pd/dt-td/CompDataDownload.cfm?LANG=E&PID=",number,"&OFT=CSV")
 }
 path=file.path(sub("/$","",getOption('custom_data_path')),paste0(code,"_ENG_CSV"),paste0(code,"_English_CSV_data.csv"))
-if (!file.exists(path)) {
+if (refresh | !file.exists(path)) {
   base_path=dirname(path)
   temp <- tempfile()
   download.file(url,temp)
@@ -359,6 +359,19 @@ find_cov_variables <- function(data,search_string){
   names(data)[grepl(search_string,names(data),ignore.case = TRUE)]
 }
 
+#' Get 2016 population ecumene data
+#' @export
+get_ecumene_2016 <- function(refresh=FALSE){
+  path=file.path(getOption("custom_data_path"),"ecomene_2016")
+  if (!dir.exists(path)){
+    tmp <- tempfile()
+    download.file("http://www12.statcan.gc.ca/census-recensement/2011/geo/bound-limit/files-fichiers/2016/lecu000e16a_e.zip",tmp)
+    unzip(tmp,exdir=path)
+    dir(path)
+    unlink(tmp)
+  }
+  read_sf(file.path(path,"lecu000e16a_e.shp"))
+}
 
 
 #' @importFrom dplyr %>%

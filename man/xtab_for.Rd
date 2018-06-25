@@ -4,7 +4,7 @@
 \alias{xtab_for}
 \title{Download csv xtab data from url, tag with code for caching}
 \usage{
-xtab_for(code, url = NA)
+xtab_for(code, url = NA, refresh = FALSE)
 }
 \description{
 Download csv xtab data from url, tag with code for caching
