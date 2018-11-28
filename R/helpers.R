@@ -109,6 +109,19 @@ common_cts <- function(data1,data2,data2_sum_vars) {
   return(data_2)
 }
 
+#' convert vector to string to be pasted into code
+#' @export
+paste_vector <- function(v){
+  paste0('c(',purrr::map(v,function(d)paste0('"',d,'"')) %>% unlist %>% paste0(collapse=",\n"),')') %>% cat
+}
+
+#' swap names and values in named vector
+#' @export
+name_flip <- function(v){
+  set_names(names(v),as.character(v))
+}
+
+
 
 #' helper for clean map theme for sf
 #' @export
@@ -164,299 +177,6 @@ sfc_as_cols <- function(x, names = c("x","y")) {
   dplyr::bind_cols(x,ret)
 }
 
-#' Download csv xtab data from url, tag with code for caching
-#' @export
-xtab_for <- function(code,url=NA,refresh=FALSE){
-if (is.na(url)) {
-  number=109619+as.integer(substr(code,nchar(code)-2,nchar(code)))
-  year=as.integer(substr(code,nchar(code)-6,nchar(code)-3))
-  url = paste0("http://www12.statcan.gc.ca/census-recensement/",year,"/dp-pd/dt-td/CompDataDownload.cfm?LANG=E&PID=",number,"&OFT=CSV")
-}
-path=file.path(sub("/$","",getOption('custom_data_path')),paste0(code,"_ENG_CSV"),paste0(code,"_English_CSV_data.csv"))
-if (refresh | !file.exists(path)) {
-  base_path=dirname(path)
-  temp <- tempfile()
-  download.file(url,temp)
-  utils::unzip(temp,exdir = base_path)
-  unlink(temp)
-}
-read_csv(path) %>%
-  rename(GeoUID = `GEO_CODE (POR)`)
-}
-
-#' Download xml xtab data from url, tag with code for caching
-#' useful for older (2006) data that does not come as csv option
-#'
-#' @param code The statcan table code, needed for caching and for locating the table to extract
-#' @param url The url to the xml table download. Only needed if the table is not cached, but
-#' reommended to always include for reproducibility
-#' @param refresh Will refresh cached data if set to TRUE, default is FALSE
-#' @param time_value If set, will use this as the time variable, otherwise extract the time variable from the data.
-#' Setting this will slightly speed up the parsing.
-#' @param temp A path to the downloaded xml zip file. Useful if file has already been downloaded and should not be
-#' downloaded again.
-#'
-#' @export
-xml_xtab_for <- function(code,url,refresh=FALSE,time_value=NA,temp=NA){
-  data <- NA
-  path <- file.path(getOption("custom_data_path"),paste0(code,".rda"))
-  if (!file.exists(path) | refresh) {
-    exdir <- tempdir()
-    if (is.na(temp)) {
-      temp <- tempfile()
-      download.file(url,temp)
-      utils::unzip(temp,exdir=exdir)
-      unlink(temp)
-    } else {
-      utils::unzip(temp,exdir=exdir)
-    }
-    # read xml xtab for 2006 data.
-    message("Parsing XML")
-    xml_structure <- read_xml(file.path(exdir,paste0("Structure_",code,".xml")))
-    xml_data <- read_xml(file.path(exdir,paste0("Generic_",code,".xml")))
-    unlink(exdir,recursive = TRUE)
-
-    str_concepts <- xml_structure %>% xml_find_all("//structure:ConceptScheme")
-    var_concepts <- str_concepts %>%
-      xml_find_all("structure:Concept") %>%
-      xml_attr("id") %>% setdiff(c("TIME", "GEO", "OBS_VALUE", "OBS_STATUS" ))
-    concepts <- c("GEO",var_concepts)
-
-    concept_names <- lapply(concepts,function(c){
-      xml_structure %>% xml_find_all(paste0("//structure:ConceptScheme/structure:Concept[@id='",c,"']/structure:Name[@xml:lang='en']")) %>%
-        xml_text}) %>% unlist
-
-    concept_lookup <- rlang::set_names(concept_names,concepts)
-
-    descriptions_for_code <- function(c){
-      c <- gsub("0$","",c)
-      base <- xml_structure %>% xml_find_all(paste0("//structure:CodeList[@id='CL_",toupper(c),"']/structure:Code"))
-      desc_text = ifelse(length(xml_find_all(base[1] ,".//structure:Description[@xml:lang='en']"))==0,".//structure:Description",".//structure:Description[@xml:lang='en']")
-      rlang::set_names(
-        base %>% purrr::map(function(e){e %>% xml_find_all(desc_text) %>% xml_text}) %>% unlist %>% trimws(),
-        base %>% purrr::map(function(e){xml_attr(e,"value")}) %>% unlist
-      )
-    }
-
-    series <- xml_find_all(xml_data,"//generic:Series")
-
-    #series <- series[1:10]
-
-    #l <- lapply(concepts,function(c){series %>% xml_find_all(paste0(".//generic:Value[@concept='",c,"']")) %>% xml_attr("value")})
-
-    time_data <- function(series){
-      if (!is.na(time_value)) {
-        result=rep(time_value,length(series))
-      } else {
-        message("Extracting year data")
-        series %>% xml_find_all(".//generic:Time") %>% xml_text
-      }
-    }
-    value_data <- function(series){
-      message("Extracting values data")
-      #series %>% xml_find_all(".//generic:ObsValue") %>% xml_attr("value")
-      series %>% xml_find_all("./generic:Obs") %>% xml_find_first("./generic:ObsValue") %>% xml_attr("value")
-    }
-    code_data <- function(series,c){
-      message(paste0("Extracting data for ",concept_lookup[c]))
-      series %>% xml_find_all(paste0(".//generic:Value[@concept='",c,"']")) %>% xml_attr("value")
-    }
-
-    df=concepts %>%
-      purrr::map(function(c){code_data(series,c)}) %>%
-      rlang::set_names(concept_names) %>%
-      tibble::as.tibble() %>%
-      dplyr::bind_cols(tibble::tibble(Year = time_data(series), Value = value_data(series)))
-
-    for (i in seq(1,length(concepts),1)) {
-      c=concepts[i]
-      n=concept_names[i] %>% as.name
-      lookup <- descriptions_for_code(c)
-      nid=paste0(n," ID") %>% as.name
-      df <- df %>%
-        mutate(!!nid := !!n) %>%
-        mutate(!!n := lookup[!!nid])
-    }
-
-    fix_ct_geo_format <- function(geo){
-      ifelse(nchar(geo)==9,paste0(substr(geo,1,7),".",substr(geo,8,9)),geo)
-    }
-
-    data <- df  %>%
-      rename(GeoUID=`Geography ID`) %>%
-      mutate(GeoUID = fix_ct_geo_format(GeoUID),
-             Value=as.numeric(Value))
-
-    saveRDS(data,path)
-  } else {
-    data <- readRDS(path)
-  }
-  data
-}
-
-#' Download xml xtab data from url, tag with code for caching
-#' useful for (2001) census profile data
-#' @export
-xml_census_2001_profile <- function(code,url,refresh=FALSE,time_value=NA,temp=NA){
-  data <- NA
-  path <- file.path(getOption("custom_data_path"),paste0(code,".rda"))
-  if (!file.exists(path) | refresh) {
-    exdir <- tempdir()
-    if (is.na(temp)) {
-      temp <- tempfile()
-      download.file(url,temp)
-      utils::unzip(temp,exdir=exdir)
-      unlink(temp)
-    } else {
-      utils::unzip(temp,exdir=exdir)
-    }
-    # read xml xtab for 2006 data.
-    message("Parsing XML")
-    xml_structure <- read_xml(file.path(exdir,paste0("Structure_",code,".xml")))
-    xml_data <- read_xml(file.path(exdir,paste0("Generic_",code,".xml")))
-
-    str_concepts <- xml_structure %>% xml_find_all("//structure:ConceptScheme")
-    var_concepts <- str_concepts %>%
-      xml_find_all("structure:Concept") %>%
-      xml_attr("id") %>% setdiff(c("TIME", "GEO", "OBS_VALUE", "OBS_STATUS" ))
-    concepts <- c("GEO",var_concepts)
-
-    concept_names <- lapply(concepts,function(c){
-      xml_structure %>% xml_find_all(paste0("//structure:ConceptScheme/structure:Concept[@id='",c,"']/structure:Name[@xml:lang='en']")) %>%
-        xml_text}) %>% unlist
-
-    concept_lookup <- rlang::set_names(concept_names,concepts)
-
-    descriptions_for_code <- function(c){
-      c <- gsub("0$","",c)
-      base <- xml_structure %>% xml_find_all(paste0("//structure:CodeList[@id='CL_",toupper(c),"']/structure:Code"))
-      desc_text = ifelse(length(xml_find_all(base[1] ,".//structure:Description[@xml:lang='en']"))==0,".//structure:Description",".//structure:Description[@xml:lang='en']")
-      rlang::set_names(
-        base %>% purrr::map(function(e){e %>% xml_find_all(desc_text) %>% xml_text}) %>% unlist %>% trimws(),
-        base %>% purrr::map(function(e){xml_attr(e,"value")}) %>% unlist
-      )
-    }
-
-    series <- xml_find_all(xml_data,"//generic:Series")
-
-    #series <- series[1:10]
-
-    #l <- lapply(concepts,function(c){series %>% xml_find_all(paste0(".//generic:Value[@concept='",c,"']")) %>% xml_attr("value")})
-
-    time_data <- function(series){
-      if (time_value) {
-        result=rep(time_value,length(series))
-      } else {
-        message("Extracting year data")
-        series %>% xml_find_all(".//generic:Time") %>% xml_text
-      }
-    }
-    value_data <- function(series){
-      message("Extracting values data")
-      #series %>% xml_find_all(".//generic:ObsValue") %>% xml_attr("value")
-      series %>% xml_find_all("./generic:Obs") %>% xml_find_first("./generic:ObsValue") %>% xml_attr("value")
-    }
-    code_data <- function(series,c){
-      message(paste0("Extracting data for ",concept_lookup[c]))
-      series %>% xml_find_all(paste0(".//generic:Value[@concept='",c,"']")) %>% xml_attr("value")
-    }
-
-    df=concepts %>%
-      purrr::map(function(c){code_data(series,c)}) %>%
-      rlang::set_names(concept_names) %>%
-      tibble::as.tibble()  %>%
-      dplyr::bind_cols(tibble::tibble(Year = time_data(series), Value = value_data(series)))
-
-    for (i in seq(1,length(concepts),1)) {
-      c=concepts[i]
-      n=concept_names[i] %>% as.name
-      lookup <- descriptions_for_code(c)
-      nid=paste0(n," ID") %>% as.name
-      df <- df %>%
-        mutate(!!nid := !!n) %>%
-        mutate(!!n := lookup[!!nid])
-    }
-
-    fix_ct_geo_format <- function(geo){
-      ifelse(nchar(geo)==9,paste0(substr(geo,1,7),".",substr(geo,8,9)),geo)
-    }
-
-    data <- df  %>%
-      rename(GeoUID=`Geography ID`) %>%
-      mutate(GeoUID = fix_ct_geo_format(GeoUID),
-             Value=as.numeric(Value))
-
-    unlink(exdir,recursive = TRUE)
-    saveRDS(data,path)
-  } else {
-    data <- readRDS(path)
-  }
-  data
-}
-
-#' Set up virtual conda env
-#' @export
-install_python_environment <- function(python_path="/anaconda3/bin/python3"){
-  reticulate::use_python(python_path)
-  reticulate::conda_binary(conda = python_path)
-  reticulate::conda_remove("r-reticulate")
-  reticulate::conda_create("r-reticulate",packages="lxml")
-}
-
-
-xml_to_csv <- function(code,url,python_path="/anaconda3/bin/python3",refresh=FALSE,time_value=NA,temp=NA){
-  path <- file.path(getOption("custom_data_path"),paste0(code,".csv"))
-  if (refresh | !file.exists(path)) {
-    remove_temp=FALSE
-    if (is.na(temp)) {
-      message("Downloading file")
-      remove_temp=TRUE
-      temp <- tempfile()
-      download.file(url,temp)
-    }
-    message("Converting xml to csv")
-    reticulate::use_python(python_path)
-    reticulate::conda_binary(conda = python_path)
-    reticulate::use_condaenv("r-reticulate")
-    statcan = reticulate::import_from_path("statcan",file.path(system.file(package="cancensusHelpers")))
-    statcan$convert_statcan_xml_to_csv(temp,path)
-    if (remove_temp) unlink(temp)
-    message("Done converting xml to csv")
-  }
-  path
-}
-
-
-#' Download xml xtab data from url, tag with code for caching
-#' useful for older (2006) data that does not come as csv option
-#'
-#' @param code The statcan table code, needed for caching and for locating the table to extract
-#' @param url The url to the xml table download. Only needed if the table is not cached, but
-#' reommended to always include for reproducibility
-#' @param python_path path to python executable, expects a conda environment 'r-reticulate' to exist.
-#' Can be set up with `install_python_environment`.
-#' @param refresh Will refresh cached data if set to TRUE, default is FALSE
-#' @param temp A path to the downloaded xml zip file. Useful if file has already been downloaded and should not be
-#' downloaded again.
-#'
-#' @export
-xml_via_python <- function(code,url,python_path="/anaconda3/bin/python3",refresh=FALSE,temp=NA){
-  readr::read_csv(xml_to_csv(code,url,python_path=python_path,refresh=refresh,temp=temp))
-}
-
-
-#' @export
-gather_for_grep_string <- function(data,gather_key,grep_string){
-  vars <- names(data)[grepl(grep_string,names(data))]
-  short_vars <- gsub(grep_string,"",vars)
-  names(data) <- gsub(grep_string,"",names(data))
-  data %>% dplyr::gather(key=!!gather_key,value="Value",short_vars)
-}
-
-#' @export
-strip_columns_for_grep_string <- function(data,grep_string){
-  data %>% dplyr::select(names(data)[!grepl(grep_string,names(data))])
-}
 
 #' Simple key-value cache function accepting closures
 #' @param object closure with return expression to be cached
@@ -544,6 +264,92 @@ get_ecumene_2016 <- function(refresh=FALSE){
     unlink(tmp)
   }
   read_sf(file.path(path,"lecu000e16a_e.shp"))
+}
+
+#' download zipped shapefile and read shapefile.
+#' @param path URL string to zipped shape file
+#' @param file_mask optional grep string in case there are several shape files in the package
+#' @return an sf object with the data from the shape file
+#' @export
+get_shapefile <- function(path,file_mask=NA){
+  tmp <- tempfile()
+  download.file(path,tmp)
+  tmpdir <- tempdir()
+  utils::unzip(tmp,exdir=tmpdir)
+  file_names <- dir(tmpdir,"*.shp$")
+  if (is.na(file_mask)) {
+    file_name=file_names[1]
+  } else {
+    file_name <- file_names[grepl(file_mask,file_names)][0]
+  }
+  message_string <- paste0("Reading ",file_name,".")
+  if (length(file_names)>0) {
+    message_string <- paste0(message_string,"\nIgnoring ",
+                             paste0(setdiff(file_names,file_name),collapse = ", "),".")
+  }
+  message(message_string)
+  data <- sf::read_sf(file.path(tmpdir,file_name))
+  unlink(tmp)
+  #unlink(tmpdir,recursive = TRUE)
+  data
+}
+
+
+#' generate data for waffle plots`
+#' @param data tibble with data
+#' @param grouping_variables variables used for grouping
+#' @param category column name for coloring
+#' @param vakue column name that contains the counts
+#' @param nrow number of rows in waffle
+#' @param nrow number of columns in waffle
+#' @export
+waffle_tile <- function(data,grouping_variables,category="Type",value="Value",nrow=10,ncol=10){
+  fix_remainders <- function(data,total){
+    while (sum(data$diff)!=0) {
+      dd <- sum(data$diff)
+      s <- sign(dd)
+      t <- top_n(data,1,-1 * s * rem)
+      data <- data %>%
+        mutate(waffleValue=ifelse(!!as.name(category)==t[[category]],waffleValue-1 * s,waffleValue),
+               rem=ifelse(!!as.name(category)==t[[category]],rem+1*s,rem)) %>%
+        mutate(diff=sum(waffleValue)-total)
+    }
+    data
+  }
+
+  total=nrow * ncol
+
+  data %>%
+    group_by_at(vars(grouping_variables)) %>%
+    mutate(Total=sum(!!as.name(value),na.rm=TRUE)) %>%
+    mutate(val=!!as.name(value)/Total*total) %>%
+    mutate(waffleValue=round(val),
+           rem=val-waffleValue) %>%
+    mutate(diff=sum(waffleValue)-total) %>%
+    do(fix_remainders(.,total)) %>%
+    mutate(Value=waffleValue) %>%
+    select(-waffleValue,-rem,-val,-diff) %>%
+    filter(Value>0) %>%
+    group_by_at(vars(c(grouping_variables,category))) %>%
+    expand(counter=seq(1:Value)) %>%
+    group_by_at(vars(grouping_variables)) %>%
+    mutate(n=row_number()) %>%
+    mutate(col=(n-1) %% ncol+1,
+           row=floor((n-1)/ncol)+1)
+}
+
+#' waffle geometry for ggplot
+#' @param color background color
+#' @param size size of grid
+#' @export
+geom_waffle <- function(color = "white", size = 0.4,...){
+  list(geom_tile(aes(x = row, y = col),color=color,size=size,...),
+       theme(axis.title.x=element_blank(),
+             axis.text.x=element_blank(),
+             axis.ticks.x=element_blank(),
+             axis.title.y=element_blank(),
+             axis.text.y=element_blank(),
+             axis.ticks.y=element_blank()))
 }
 
 #' @import xml2
