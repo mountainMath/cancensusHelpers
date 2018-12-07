@@ -121,7 +121,16 @@ name_flip <- function(v){
   set_names(names(v),as.character(v))
 }
 
-
+#' turn two columns of a tibble into a named vector
+#'
+#' @param data a tibble
+#' @param name_column string with the name of the column to be used as names in the vector
+#' @param value_column string with the name of the column to be used as values in the vector
+#' @return a named vector
+#' @export
+to_named_vector <- function(data,name_column,value_column){
+  set_names(data[[value_column]],data[[name_column]])
+}
 
 #' helper for clean map theme for sf
 #' @export

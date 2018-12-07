@@ -2,8 +2,8 @@
 #' @export
 parse_geography_from <- function(data,geo_column="Geography"){
   data %>%
-    dplyr::mutate(GeoUID=gsub("^.+ \\((\\d+)\\) .+$","\\1",!!as.name(geo_column)),
-                  name=gsub("^(.+) \\((\\d+)\\).+$","\\1",!!as.name(geo_column)))
+    dplyr::mutate(GeoUID=gsub("^.+ \\((\\d+\\.*\\d*)\\) .+$","\\1",!!as.name(geo_column))) %>%
+    dplyr::mutate(Name=gsub("^(.+) \\((\\d+\\.*\\d*)\\).+$","\\1",!!as.name(geo_column)))
 }
 
 #' read in beyond20/20 export of statcan xtab into tidy long-format data frame
@@ -117,6 +117,18 @@ xtab_for <- function(code,url=NA,refresh=FALSE,system_unzip=FALSE){
   data %>% mutate_at(ns,as.numeric)
 }
 
+unzip_file <- function(file,exdir,system_unzip=FALSE) {
+  if (system_unzip) {
+    decompression <-
+      system2("unzip",
+              args = c(paste0("-o -d ",exdir), # exdidecrr
+                       file),
+              stdout = TRUE)
+  } else {
+    utils::unzip(file,exdir = exdir)
+  }
+}
+
 #' Download xml xtab data from url, tag with code for caching
 #' useful for older (2006) data that does not come as csv option
 #'
@@ -130,7 +142,7 @@ xtab_for <- function(code,url=NA,refresh=FALSE,system_unzip=FALSE){
 #' downloaded again.
 #'
 #' @export
-xml_xtab_for <- function(code,url,refresh=FALSE,time_value=NA,temp=NA){
+xml_xtab_for <- function(code,url,refresh=FALSE,time_value=NA,temp=NA,system_unzip=FALSE){
   data <- NA
   path <- file.path(getOption("custom_data_path"),paste0(code,".rda"))
   if (!file.exists(path) | refresh) {
@@ -138,10 +150,10 @@ xml_xtab_for <- function(code,url,refresh=FALSE,time_value=NA,temp=NA){
     if (is.na(temp)) {
       temp <- tempfile()
       download.file(url,temp)
-      utils::unzip(temp,exdir=exdir)
+      unzip_file(temp,exdir=exdir,system_unzip = TRUE)
       unlink(temp)
     } else {
-      utils::unzip(temp,exdir=exdir)
+      unzip_file(temp,exdir=exdir,system_unzip = TRUE)
     }
     # read xml xtab for 2006 data.
     message("Parsing XML")
@@ -336,7 +348,8 @@ install_python_environment <- function(python_path="/anaconda3/bin/python3"){
   reticulate::conda_create("r-reticulate",packages="lxml")
 }
 
-
+#' Use python to parse xml
+#' @export
 xml_to_csv <- function(code,url,python_path="/anaconda3/bin/python3",refresh=FALSE,time_value=NA,temp=NA){
   path <- file.path(getOption("custom_data_path"),paste0(code,".csv"))
   if (refresh | !file.exists(path)) {
