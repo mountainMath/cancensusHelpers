@@ -403,3 +403,91 @@ gather_for_grep_string <- function(data,gather_key,grep_string){
 strip_columns_for_grep_string <- function(data,grep_string){
   data %>% dplyr::select(names(data)[!grepl(grep_string,names(data))])
 }
+
+
+#' convert csv to sqlite
+#' from https://rdrr.io/github/coolbutuseless/csv2sqlite/src/R/csv2sqlite.R
+#'
+#' @param csv_file input csv path
+#' @param sqlite_file output sql database path
+#' @param table_name sql table name
+#' @param transform optional function that transforms each chunk
+#' @param chunk_size optional chunk size to read/write data, default=1,000,000
+#' @param append optional parameter, append to database or overwrite, defaul=`FALSE`
+#' @export
+csv2sqlite <- function(csv_file, sqlite_file, table_name, transform=NULL,chunk_size=1000000, append=FALSE,col_types=NULL,na=c(NA,"..","F")) {
+  # Read first 1000 rows just to determine col_types and col_names
+  df <- readr::read_csv(csv_file, n_max=100,col_types = col_types,na=na)
+  if (nrow(readr::problems(df)) > 0) print(readr::problems(df))
+
+  # Convert column classes to character string for read_csv()
+  # i.e. character, integer, integer => "cii"
+  # This is done to ensure that read_csv doesn't try to re-determine
+  # the column types for every chunk.
+  col_names  <- colnames(df)
+  if (is.null(col_types)) {
+    type_trans <- c(character='c', numeric='d', integer='i', logical='l', Date='c')
+    col_types  <- type_trans[sapply(df, FUN=class)]
+    col_types  <- paste0(col_types, collapse="")
+    cat("col_types:", col_types, "\n")
+  }
+
+  if (!is.null(transform)) df <- df %>% transform
+  df <- as.data.frame(df)
+
+  # Connect to database.
+  if (!append) file.remove(sqlite_file)
+  con <- DBI::dbConnect(RSQLite::SQLite(), dbname=sqlite_file)
+
+  # Read the data from the beginning of the CSV
+  # Remember to skip the header
+  chunk    <- 0
+  rowsread <- 0
+  while(TRUE) {
+    cat("Chunk:", chunk, "\n")
+    # skip = iter*chunk_size + 1.  the "+1" is because we can now skip the header
+    # The "%>% as.data.frame" is because dbWriteTable is a bit fussy on data structure
+    df <- readr::read_csv(csv_file, col_names, col_types, skip=chunk*chunk_size+1, n_max=chunk_size)
+    if (nrow(readr::problems(df)) > 0) print(readr::problems(df))
+    if (!is.null(transform)) df <- df %>% transform
+    df <- as.data.frame(df)
+
+    if (nrow(df) == 0) {
+      cat("Out of rows...\n")
+      break
+    }
+    if ((nrow(df) == 1) & (sum(!(is.na(df))) == 0)) {
+      # this is a workaround for a bug in readr::read_csv when col_types is specified
+      # and skip > #rows in file.  readr incorrectly returns a data.frame with a single row
+      # of all NA values.
+      cat("Out of rows (bugged)...\n")
+      break
+    }
+    rowsread <- rowsread + nrow(df)
+    cat("Rows read:", nrow(df), "  total so far:", rowsread, "\n")
+    DBI::dbWriteTable(con, table_name, df, append=TRUE)
+    chunk <- chunk + 1
+  }
+  cat("Total Read:", rowsread, "\n")
+
+  DBI::dbDisconnect(con)
+}
+
+
+#' Get unique values for field
+#'
+#' @param connection Database connection
+#' @param table_name Name of the table
+#' @param field name of the field
+#' @where_string optional where condition
+#' @export
+get_unique_values_for_field <- function(connection,table_name,field,where_string=NA){
+  if (!is.na(where_string)) {
+    where_string=paste0(" WHERE ",where_string,";")
+  } else {
+    where_string=";"
+  }
+
+  DBI::dbGetQuery(connection,paste0("SELECT DISTINCT `",field,"` FROM ",table_name, where_string))[[field]]
+}
+

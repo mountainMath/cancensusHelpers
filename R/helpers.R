@@ -361,6 +361,10 @@ geom_waffle <- function(color = "white", size = 0.4,...){
              axis.ticks.y=element_blank()))
 }
 
+
+
+
+
 #' @import xml2
 #' @importFrom dplyr %>%
 #' @importFrom rlang .data
