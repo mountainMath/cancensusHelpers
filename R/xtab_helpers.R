@@ -80,6 +80,21 @@ xtab_path_for_code <- function(code){
   file.path(sub("/$","",getOption('custom_data_path')),paste0(code,"_ENG_CSV"),paste0(code,"_English_CSV_data.csv"))
 }
 
+#' @export
+xtab_dir_for_code <- function(code){
+  file.path(sub("/$","",getOption('custom_data_path')),paste0(code,"_ENG_CSV"))
+}
+
+#' @export
+remove_xtab_for_code <- function(code){
+  if (dir.exists(xtab_dir_for_code(code))) {
+    unlink(xtab_dir_for_code(code),recursive=TRUE)
+    print("Removed xtab")
+  } else {
+    print("Xtab not found")
+  }
+}
+
 #' Download csv xtab data from url
 #' @export
 ensure_local_statcan_xtab<-function(code,url,refresh=FALSE,system_unzip=TRUE){

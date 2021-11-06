@@ -4,8 +4,7 @@
 \alias{get_unique_values_for_field}
 \title{Get unique values for field}
 \usage{
-get_unique_values_for_field(connection, table_name, field,
-  where_string = NA)
+get_unique_values_for_field(connection, table_name, field, where_string = NA)
 }
 \arguments{
 \item{connection}{Database connection}

@@ -4,8 +4,9 @@
 \alias{get_multi_header_xtab}
 \title{read in beyond20/20 export of statcan xtab into tidy long-format data frame}
 \usage{
-get_multi_header_xtab(path, parse_geography_column = function(data) {    
-  data })
+get_multi_header_xtab(path, parse_geography_column = function(data) {
+    data
+})
 }
 \description{
 read in beyond20/20 export of statcan xtab into tidy long-format data frame

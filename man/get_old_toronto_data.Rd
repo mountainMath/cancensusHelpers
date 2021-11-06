@@ -4,8 +4,14 @@
 \alias{get_old_toronto_data}
 \title{Get variables for CTs making up Old Toronto}
 \usage{
-get_old_toronto_data(dataset, vectors = c(), labels = "short",
-  geo_format = NA, also_new_toronto = FALSE, aggregate = FALSE)
+get_old_toronto_data(
+  dataset,
+  vectors = c(),
+  labels = "short",
+  geo_format = NA,
+  also_new_toronto = FALSE,
+  aggregate = FALSE
+)
 }
 \description{
 Get variables for CTs making up Old Toronto

@@ -4,8 +4,7 @@
 \alias{simpleCache}
 \title{Simple key-value cache function accepting closures}
 \usage{
-simpleCache(object, key, path = getOption("custom_data_path"),
-  refresh = FALSE)
+simpleCache(object, key, path = getOption("custom_data_path"), refresh = FALSE)
 }
 \arguments{
 \item{object}{closure with return expression to be cached}

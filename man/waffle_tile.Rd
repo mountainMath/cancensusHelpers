@@ -4,8 +4,14 @@
 \alias{waffle_tile}
 \title{generate data for waffle plots`}
 \usage{
-waffle_tile(data, grouping_variables, category = "Type",
-  value = "Value", nrow = 10, ncol = 10)
+waffle_tile(
+  data,
+  grouping_variables,
+  category = "Type",
+  value = "Value",
+  nrow = 10,
+  ncol = 10
+)
 }
 \arguments{
 \item{data}{tibble with data}
@@ -14,11 +20,9 @@ waffle_tile(data, grouping_variables, category = "Type",
 
 \item{category}{column name for coloring}
 
-\item{nrow}{number of rows in waffle}
+\item{nrow}{number of columns in waffle}
 
 \item{vakue}{column name that contains the counts}
-
-\item{nrow}{number of columns in waffle}
 }
 \description{
 generate data for waffle plots`

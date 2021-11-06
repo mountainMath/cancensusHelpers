@@ -145,7 +145,7 @@ get_old_toronto_data<-function(dataset,vectors=c(),labels="short",geo_format=NA,
   old_toronto_cts <- list(CT=c("5350002.00","5350001.00","5350008.02","5350011.00","5350012.03","5350012.01","5350013.02","5350012.04","5350014.00","5350016.00","5350013.01","5350015.00","5350017.00","5350029.00","5350068.00","5350034.01","5350037.00","5350041.00","5350040.00","5350039.00","5350010.02","5350035.00","5350036.00","5350038.00","5350032.00","5350034.02","5350033.00","5350030.00","5350019.00","5350018.00","5350031.00","5350069.00","5350028.02","5350028.01","5350027.00","5350020.00","5350026.00","5350021.00","5350022.00","5350023.00","5350078.00","5350024.00","5350079.00","5350080.02","5350080.01","5350076.00","5350082.00","5350075.00","5350077.00","5350074.00","5350081.00","5350007.01","5350004.00","5350047.04","5350047.02","5350005.00","5350007.02","5350008.01","5350009.00","5350010.01","5350044.00","5350043.00","5350048.00","5350049.00","5350050.03","5350050.01","5350050.04","5350104.00","5350103.00","5350152.00","5350105.00","5350101.00","5350106.00","5350107.00","5350111.00","5350112.00","5350113.00","5350114.00","5350116.00","5350118.00","5350119.00","5350131.00","5350167.01","5350130.00","5350132.00","5350133.00","5350277.00","5350141.01","5350141.02","5350142.00","5350138.00","5350139.01","5350140.00","5350139.02","5350137.00","5350127.00","5350126.00","5350125.00","5350086.00","5350067.00","5350136.01","5350135.00","5350134.00","5350136.02","5350128.02","5350129.00","5350122.00","5350128.05","5350128.04","5350121.00","5350124.00","5350110.00","5350108.00","5350100.00","5350102.05","5350102.04","5350102.02","5350102.03","5350099.00","5350098.00","5350051.00","5350052.00","5350053.00","5350046.00","5350047.03","5350042.00","5350045.00","5350054.00","5350096.02","5350097.04","5350096.01","5350109.00","5350097.01","5350097.03","5350056.00","5350055.00","5350065.02","5350064.00","5350063.05","5350061.00","5350060.00","5350057.00","5350058.00","5350059.00","5350063.06","5350066.00","5350063.04","5350063.03","5350062.02","5350062.01","5350087.00","5350088.00","5350089.00","5350091.01","5350092.00","5350093.00","5350094.00","5350095.00","5350115.00","5350091.02","5350090.00","5350120.00","5350117.00","5350128.06","5350025.00","5350065.01","5350123.00","5350006.00","5350003.00"))
   short_cts <- sub("\\.\\d{2}$","",old_toronto_cts$CT) %>% unique
 
-  old_toronto <- get_census("CA16",regions=list(CSD="3520005"),vectors=vectors,level="CT",labels=labels,geo_format=geo_format) %>%
+  old_toronto <- get_census("CA16",regions=list(CSD="3520005"),vectors=vectors,level="CT",labels=labels,geo_format=geo_format,quiet=TRUE) %>%
     mutate(short_ct=sub("\\.\\d{2}$","",GeoUID)) %>%
     mutate(old=short_ct %in% short_cts & GeoUID != "5350167.02") %>%
     select(-short_ct)
@@ -218,40 +218,48 @@ get_vector_tiles <- function(bbox){
 #' load and parse census data for a given year
 #' @export
 get_cov_census_data <- function(year,use_cache=TRUE){
+  if (!(as.integer(year) %in% seq(2001,2016,5))) stop("Only have data for census years 2001 through 2016")
   base_name="CensusLocalAreaProfiles"
   year_name=paste0(base_name,year,".csv")
   path=paste0(getOption("custom_data_path"),year_name)
   if (!use_cache | !file.exists(path)) {
-    base_data_url="ftp://webftp.vancouver.ca/opendata/csv/"
+    base_data_url="https://webtransfer.vancouver.ca/opendata/csv/"
     destfile=tempfile()
     download.file(paste0(base_data_url,year_name),destfile=destfile)
-    data <- read_csv(destfile,skip=4,locale=locale(encoding = "windows-1252"),na=c(NA,"..","F")) %>%
+    data <- read_csv(destfile,skip=4,locale=locale(encoding = "windows-1252"),na=c(NA,"..","F"),
+                     col_types = cols(.default="c")) %>%
       mutate(IDX = 1:n())
     if (!("ID" %in% names(data))) {
       data <- data %>% mutate(ID=IDX)
     }
     if (!("Variable" %in% names(data))) {
-      data <- data %>% rename(Variable=X1)
+      data <- data %>% rename(Variable=...1)
     }
     n<- names(data)[!grepl("^X",names(data))]
     data <- data %>%
+      filter(ID!="") %>%
       select(n) %>%
-      mutate(Variable=ifelse(is.na(ID),paste0("filler_",IDX),paste0("v_",year,"_",ID,": ",Variable))) %>%
-      select(-IDX,-ID)
+      mutate(Label=Variable) %>%
+      mutate(Variable=ifelse(is.na(ID),paste0("filler_",IDX),paste0("v_COV",year,"_",ID,": ",Variable))) %>%
+      select(-IDX,-ID) %>%
+      pivot_longer(-one_of(c("Variable","Label")),names_to="Region",values_to="Value") %>%
+      mutate(Value=na_if(Value,"-")) %>%
+      mutate(Value=parse_number(Value)) %>%
+      mutate(Region=recode(Region,"Vancouver CMA"="Metro Vancouver","Vancouver CSD"="City of Vancouver"))
     unlink(destfile)
-    dd <- data %>% as.data.frame()
-    row.names(dd)=dd$Variable
-    d <- t(dd %>% select(-Variable))
-    region_names <- rownames(d)
-    transposed_data <- tibble::as.tibble(d) %>%
-      dplyr::mutate_all(dplyr::funs(parse_number)) %>%
-      mutate(NAME=case_when(
-        grepl("CSD",region_names) ~ "City of Vancouver",
-        grepl("CMA",region_names) ~ "Metro Vancouver",
-        TRUE ~ region_names), Year=year)
-    write_csv(transposed_data,path=path)
+    # dd <- data %>% as.data.frame()
+    # row.names(dd)=dd$Variable
+    # d <- t(dd %>% select(-Variable))
+    # region_names <- rownames(d)
+    # transposed_data <- tibble::as.tibble(d) %>%
+    #   dplyr::mutate_all(parse_number) %>%
+    #   mutate(NAME=case_when(
+    #     grepl("CSD",region_names) ~ "City of Vancouver",
+    #     grepl("CMA",region_names) ~ "Metro Vancouver",
+    #     TRUE ~ region_names), Year=year)
+    write_csv(data,file=path)
   }
-  data <- read_csv(path)
+  data <- read_csv(path,col_types = cols(.default="c",Value="d"))
   # %>% inner_join(get_neighbourhood_geos(),by="NAME")
 }
 
@@ -289,7 +297,8 @@ get_shapefile <- function(path,file_mask=NA){
   if (is.na(file_mask)) {
     file_name=file_names[1]
   } else {
-    file_name <- file_names[grepl(file_mask,file_names)][0]
+    file_name <- file_names[grepl(file_mask,file_names)]
+    if (length(file_names)>1)file_names=file_names[1]
   }
   message_string <- paste0("Reading ",file_name,".")
   if (length(file_names)>0) {
@@ -366,8 +375,9 @@ geom_waffle <- function(color = "white", size = 0.4,...){
 
 
 #' @import xml2
-#' @importFrom dplyr %>%
+#' @import dplyr
 #' @importFrom rlang .data
+#' @import readr
 NULL
 
 

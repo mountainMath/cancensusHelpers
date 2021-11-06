@@ -4,7 +4,9 @@
 \name{map_theme}
 \alias{map_theme}
 \title{helper for clean map theme for sf}
-\format{An object of class \code{list} of length 2.}
+\format{
+An object of class \code{list} of length 2.
+}
 \usage{
 map_theme
 }

@@ -4,8 +4,7 @@
 \alias{ensure_local_statcan_xtab}
 \title{Download csv xtab data from url}
 \usage{
-ensure_local_statcan_xtab(code, url, refresh = FALSE,
-  system_unzip = TRUE)
+ensure_local_statcan_xtab(code, url, refresh = FALSE, system_unzip = TRUE)
 }
 \description{
 Download csv xtab data from url
