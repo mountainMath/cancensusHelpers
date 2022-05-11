@@ -2,8 +2,10 @@
 #' Returns dataset with age data for the specified region
 #' @param dataset Cancensus Datatset
 #' @param regions Cancensus Regions
+#' @param should_sum logical, should the regions be summed up or reported separately
+#' @param refresh logical, should cached data be refreshed
 #' @export
-get_age_data <- function(dataset,regions,should_sum=FALSE) {
+get_age_data <- function(dataset,regions,should_sum=FALSE,refresh=FALSE) {
   long_labels <- function(data){
     labels=cancensus::label_vectors(data)
     name_change=setNames(as.character(lapply(labels$Vector,function(x){return(labels %>% dplyr::filter(Vector==x) %>% dplyr::pull("Detail"))})),
@@ -16,15 +18,21 @@ get_age_data <- function(dataset,regions,should_sum=FALSE) {
     return(data)
   }
 
-  male <-cancensus::search_census_vectors('Total - Age',dataset,"Male", quiet=TRUE) %>%
+  male <-cancensus::search_census_vectors('Total - Age',dataset,"Male", quiet=TRUE)
+  if (nrow(male)==0||"Similarly named objects" %in% names(male)) male <-cancensus::search_census_vectors('^Male, total',dataset,"Total", quiet=TRUE)
+  male <- male %>%
     cancensus::child_census_vectors(TRUE) %>%
     dplyr::filter(!grepl("Average",label),!grepl(" to ",label),!grepl("5 years and over",label),!grepl("Under 5 years",label))
-  female <-cancensus::search_census_vectors('Total - Age',dataset,"Female", quiet=TRUE) %>%
+  female <-cancensus::search_census_vectors('Total - Age',dataset,"Female", quiet=TRUE)
+  if (nrow(female)==0||"Similarly named objects" %in% names(female)) female <-cancensus::search_census_vectors('^Female, total',dataset,"Total", quiet=TRUE)
+  female <- female %>%
     cancensus::child_census_vectors(TRUE) %>%
     dplyr::filter(!grepl("Average",label),!grepl(" to ",label),!grepl("5 years and over",label),!grepl("Under 5 years",label))
   vectors <- rbind(male,female) %>% dplyr::pull("vector")
-  male_data <- cancensus::get_census(dataset = dataset, regions=regions,level="Regions",labels="short", vectors=male$vector, quiet=TRUE)
-  female_data <- cancensus::get_census(dataset = dataset, regions=regions,level="Regions",labels="short", vectors=female$vector, quiet=TRUE)
+  male_data <- cancensus::get_census(dataset = dataset, regions=regions,level="Regions",labels="short", vectors=male$vector,
+                                     quiet=TRUE, use_cache = !refresh)
+  female_data <- cancensus::get_census(dataset = dataset, regions=regions,level="Regions",labels="short", vectors=female$vector,
+                                       quiet=TRUE,use_cache = !refresh)
 
   labels=male_data %>% cancensus::label_vectors() %>% dplyr::pull("Detail")
   labels[labels=="100 years and over"]="100+"
@@ -33,17 +41,30 @@ get_age_data <- function(dataset,regions,should_sum=FALSE) {
 
   data <- rbind(male_data %>% long_labels %>% dplyr::mutate(Gender="Male"), female_data %>%
                   long_labels %>%
-                  dplyr::mutate(Gender="Female")) %>%
-    dplyr::mutate(`100+`=`100 years and over`) %>% dplyr::select(c("Region Name","Gender",labels))
+                  dplyr::mutate(Gender="Female"))
+  if ("100 years and over" %in% names(data)) {
+    data <- data %>%
+      dplyr::mutate(`100+`=`100 years and over`) %>% dplyr::select(c("GeoUID","Region Name","Gender",labels))
+  }
   if (should_sum) {
     selects <- setdiff(names(data),"Region Name")
     data <- data %>% dplyr::select(selects) %>% dplyr::group_by(Gender) %>% dplyr::summarize_all(sum,na.rm=TRUE)
   }
-  plot_data <- data %>% tidyr::gather(key="Age", value="Population",labels) %>%
-    dplyr::mutate(Age=factor(Age,levels=label_levels,ordered=TRUE))
+  if ("Population" %in% names(data)) data <- data %>% select(-Population)
+  plot_data <- data %>%
+    tidyr::pivot_longer(labels,names_to="Age", values_to ="Population")
+
+  if (setdiff(unique(plot_data$Age),label_levels) %>% length()==0) {
+    plot_data <- plot_data %>%
+      dplyr::mutate(Age=factor(Age,levels=label_levels,ordered=TRUE))
+  } else {
+    age_labels <- plot_data$Age %>% unique
+    plot_data <- plot_data %>%
+      dplyr::mutate(Age=factor(Age,levels=age_labels,ordered=TRUE))
+  }
   plot_data[plot_data$Gender=="Male","Population"]=-plot_data[plot_data$Gender=="Male","Population"]
 
-  return (plot_data)
+  return (plot_data %>% select(GeoUID,`Region Name`,Gender,Age,Population))
 }
 
 #' Assigns long labels
@@ -145,7 +166,7 @@ get_old_toronto_data<-function(dataset,vectors=c(),labels="short",geo_format=NA,
   old_toronto_cts <- list(CT=c("5350002.00","5350001.00","5350008.02","5350011.00","5350012.03","5350012.01","5350013.02","5350012.04","5350014.00","5350016.00","5350013.01","5350015.00","5350017.00","5350029.00","5350068.00","5350034.01","5350037.00","5350041.00","5350040.00","5350039.00","5350010.02","5350035.00","5350036.00","5350038.00","5350032.00","5350034.02","5350033.00","5350030.00","5350019.00","5350018.00","5350031.00","5350069.00","5350028.02","5350028.01","5350027.00","5350020.00","5350026.00","5350021.00","5350022.00","5350023.00","5350078.00","5350024.00","5350079.00","5350080.02","5350080.01","5350076.00","5350082.00","5350075.00","5350077.00","5350074.00","5350081.00","5350007.01","5350004.00","5350047.04","5350047.02","5350005.00","5350007.02","5350008.01","5350009.00","5350010.01","5350044.00","5350043.00","5350048.00","5350049.00","5350050.03","5350050.01","5350050.04","5350104.00","5350103.00","5350152.00","5350105.00","5350101.00","5350106.00","5350107.00","5350111.00","5350112.00","5350113.00","5350114.00","5350116.00","5350118.00","5350119.00","5350131.00","5350167.01","5350130.00","5350132.00","5350133.00","5350277.00","5350141.01","5350141.02","5350142.00","5350138.00","5350139.01","5350140.00","5350139.02","5350137.00","5350127.00","5350126.00","5350125.00","5350086.00","5350067.00","5350136.01","5350135.00","5350134.00","5350136.02","5350128.02","5350129.00","5350122.00","5350128.05","5350128.04","5350121.00","5350124.00","5350110.00","5350108.00","5350100.00","5350102.05","5350102.04","5350102.02","5350102.03","5350099.00","5350098.00","5350051.00","5350052.00","5350053.00","5350046.00","5350047.03","5350042.00","5350045.00","5350054.00","5350096.02","5350097.04","5350096.01","5350109.00","5350097.01","5350097.03","5350056.00","5350055.00","5350065.02","5350064.00","5350063.05","5350061.00","5350060.00","5350057.00","5350058.00","5350059.00","5350063.06","5350066.00","5350063.04","5350063.03","5350062.02","5350062.01","5350087.00","5350088.00","5350089.00","5350091.01","5350092.00","5350093.00","5350094.00","5350095.00","5350115.00","5350091.02","5350090.00","5350120.00","5350117.00","5350128.06","5350025.00","5350065.01","5350123.00","5350006.00","5350003.00"))
   short_cts <- sub("\\.\\d{2}$","",old_toronto_cts$CT) %>% unique
 
-  old_toronto <- get_census("CA16",regions=list(CSD="3520005"),vectors=vectors,level="CT",labels=labels,geo_format=geo_format,quiet=TRUE) %>%
+  old_toronto <- get_census(dataset,regions=list(CSD="3520005"),vectors=vectors,level="CT",labels=labels,geo_format=geo_format,quiet=TRUE) %>%
     mutate(short_ct=sub("\\.\\d{2}$","",GeoUID)) %>%
     mutate(old=short_ct %in% short_cts & GeoUID != "5350167.02") %>%
     select(-short_ct)
@@ -204,14 +225,6 @@ simpleCache <- function(object,key,path=getOption("custom_data_path"),refresh=FA
   }
 }
 
-#' Get vector tile data, expects option variable nextzen_API_key to be set
-#' @param bbox bounding box for which to get vector tile data
-#' @export
-get_vector_tiles <- function(bbox){
-  rmapzen::mz_set_tile_host_nextzen(getOption("nextzen_API_key"))
-  mx_box=rmapzen::mz_rect(bbox$xmin,bbox$ymin,bbox$xmax,bbox$ymax)
-  rmapzen::mz_vector_tiles(mx_box)
-}
 
 
 
@@ -283,34 +296,7 @@ get_ecumene_2016 <- function(refresh=FALSE){
   read_sf(file.path(path,"lecu000e16a_e.shp"))
 }
 
-#' download zipped shapefile and read shapefile.
-#' @param path URL string to zipped shape file
-#' @param file_mask optional grep string in case there are several shape files in the package
-#' @return an sf object with the data from the shape file
-#' @export
-get_shapefile <- function(path,file_mask=NA){
-  tmp <- tempfile()
-  download.file(path,tmp)
-  tmpdir <- tempdir()
-  utils::unzip(tmp,exdir=tmpdir)
-  file_names <- dir(tmpdir,"*.shp$")
-  if (is.na(file_mask)) {
-    file_name=file_names[1]
-  } else {
-    file_name <- file_names[grepl(file_mask,file_names)]
-    if (length(file_names)>1)file_names=file_names[1]
-  }
-  message_string <- paste0("Reading ",file_name,".")
-  if (length(file_names)>0) {
-    message_string <- paste0(message_string,"\nIgnoring ",
-                             paste0(setdiff(file_names,file_name),collapse = ", "),".")
-  }
-  message(message_string)
-  data <- sf::read_sf(file.path(tmpdir,file_name))
-  unlink(tmp)
-  #unlink(tmpdir,recursive = TRUE)
-  data
-}
+
 
 
 #' generate data for waffle plots`

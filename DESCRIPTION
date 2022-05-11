@@ -17,5 +17,9 @@ Depends: dplyr (>= 0.7.2),
 RoxygenNote: 7.1.2
 Suggests: knitr,
     rmarkdown,
-    tidyverse
+    tidyverse,
+    ggplot2,
+    scales,
+    stats,
+    utilsde
 VignetteBuilder: knitr

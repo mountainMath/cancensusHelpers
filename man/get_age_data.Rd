@@ -4,12 +4,16 @@
 \alias{get_age_data}
 \title{Returns dataset with age data for the specified region}
 \usage{
-get_age_data(dataset, regions, should_sum = FALSE)
+get_age_data(dataset, regions, should_sum = FALSE, refresh = FALSE)
 }
 \arguments{
 \item{dataset}{Cancensus Datatset}
 
 \item{regions}{Cancensus Regions}
+
+\item{should_sum}{logical, should the regions be summed up or reported separately}
+
+\item{refresh}{logical, should cached data be refreshed}
 }
 \description{
 Returns dataset with age data for the specified region
